@@ -1,0 +1,11 @@
+name: kph2
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - mlflow
+  - spacy
+  - pip:
+    - pymed==0.8.9
+

@@ -1,0 +1,16 @@
+name: KPHAlphabet
+
+entry_points:
+  pull_pmed_data:
+    parameters:
+        search_term: {type: string, default: 'COVID'}
+        max_records: {type: int, default: 1}
+        save_json: {type:string, default: 'pmed.json'}
+        inputfile: {type:int, defulat: 1}
+    command: "python pmedpull.py --inputfile {inputfile} --search_term {search_term} --max_records {max_records} --save_json {save_json}"
+  prep_data:
+    parameters:
+      json_in: {type: string, default: 'pmed.json'}
+      save_df: {type: string, default: 'dfprocessed.p'} 
+      inputfile: {type:int, defulat: 1}
+    command: "python dataprep.py --inputfile {inputfile} --json_in {json_in} --save_df {save_df}"

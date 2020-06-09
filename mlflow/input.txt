@@ -1,0 +1,7 @@
+{
+    'search_term': '"hiv"[MeSH Terms] OR "hiv"[All Fields]',
+    'max_records': 20,
+    'save_json': 'pmed.json',
+    'save_df': 'dfprocessed.p',
+    'json_in': 'pmed.json'
+}
