@@ -6,6 +6,13 @@ channels:
 dependencies:
   - mlflow
   - spacy
+  - torchtext
+  - pytorch 
+  - torchvision 
+  - cudatoolkit=10.1
+  - numpy
+  - pip
   - pip:
     - pymed==0.8.9
+    - pytorch-crf
 

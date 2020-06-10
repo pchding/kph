@@ -7,8 +7,7 @@ import subprocess
 import ast
 
 
-@click.command(help="Pull records from Pubmed for given search term"
-                    "Search term should follow the query format")
+@click.command(help="Convert JSON to PD. Tag key phrases")
 @click.option("--json_in", default='pmed.json')
 @click.option("--save_df", default='dfprocessed.p')
 @click.option("--inputfile", default=1,

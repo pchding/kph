@@ -14,3 +14,19 @@ entry_points:
       save_df: {type: string, default: 'dfprocessed.p'} 
       inputfile: {type:int, defulat: 1}
     command: "python dataprep.py --inputfile {inputfile} --json_in {json_in} --save_df {save_df}"
+  ke_train:
+    parameters:
+      df_in: {type: string, default: 'dfprocessed.p'}
+      embvecache: {type: string, default: '/home/pding/Documents/glove/'}
+      embvec: {type: int, defulat: 1}
+      val_ratio: {type:float, default: 0.2}
+      rnnsize: {type:int, default: 128}
+      batchsize: {type:int, default: 310}
+      lr: {type:float, default: 0.01}
+      weight_decay: {type:float, default: 1e-5}
+      n_epochs: {type:int, default: 15}
+      model_save: {type: string, default: 'model0.pt'}
+      inputfile: {type:int, defulat: 1}
+    command: "python kemodel.py --inputfile {inputfile} --df_in {df_in} --embvec {embvec} --embvecache {embvecache}
+              --val_ratio {val_ratio} --rnnsize {rnnsize} --batchsize {batchsize} --lr {lr}
+              --weight_decay {weight_decay} --n_epochs {n_epochs} --model_save {model_save}"

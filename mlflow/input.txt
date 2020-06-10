@@ -3,5 +3,15 @@
     'max_records': 20,
     'save_json': 'pmed.json',
     'save_df': 'dfprocessed.p',
-    'json_in': 'pmed.json'
+    'json_in': 'pmed.json',
+    'df_in': 'dfprocessed.p',
+    'embvec': 1,
+    'embvecache': '/home/pding/Documents/glove/',
+    'val_ratio': 0.2,
+    'rnnsize': 128,
+    'batchsize': 310,
+    'lr': 0.01,
+    'weight_decay': 1e-5,
+    'n_epochs': 15,
+    'model_save': 'model0.pt'
 }
