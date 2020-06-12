@@ -5,13 +5,12 @@ import time
 import torchtext
 import click
 import numpy as np
-import random
-from collections import defaultdict, Counter
 import pandas as pd
 import spacy
 from torchcrf import CRF
 import ast
 import subprocess
+import mlflow.pytorch
 
 
 @click.command(help="Convert JSON to PD. Tag key phrases")
@@ -94,7 +93,11 @@ def ketraintest(inputfile, df_in, embvec, embvecache, val_ratio, rnnsize, batchs
         train(train_examples, valid_examples, embvec, TEXT, LABEL, device, model0, batchsize, optimizer,n_epochs)
         out2 = evaltest2(df_val, df_val_k, model0, tokenizersrc, fields, device)
         ttp3 = kphperct(df_val_k, out2,svoc)
+        mlflow.log_param("epochs", n_epochs)
+        mlflow.pytorch.save_model(model0, model_save)
+        mlflow.log_metric("extraction_rate", ttp3.mean())
         print(ttp3.mean())
+
 
 class RNNCRFTagger(nn.Module):
     
@@ -123,31 +126,29 @@ class RNNCRFTagger(nn.Module):
         embedded = self.embedding(sentences)
         rnn_out, _ = self.rnn(embedded)
         out = self.top_layer(rnn_out)
-        
-        pad_mask = (sentences == self.pad_word_id).float()
-        out[:, :, self.pad_label_id] += pad_mask*10000
-        
         return out
                 
     def forward(self, sentences, labels):
         # Compute the outputs of the lower layers, which will be used as emission
         # scores for the CRF.
         scores = self.compute_outputs(sentences)
-
+        mask0 = sentences != self.pad_word_id
+        mask = mask0.byte()
         # We return the loss value. The CRF returns the log likelihood, but we return 
         # the *negative* log likelihood as the loss value.            
         # PyTorch's optimizers *minimize* the loss, while we want to *maximize* the
         # log likelihood.
-        return -self.crf(scores, labels)
-            
+        return -self.crf(scores, labels, mask=mask)
+
     def predict(self, sentences):
         # Compute the emission scores, as above.
         scores = self.compute_outputs(sentences)
-
+        mask0 = sentences != self.pad_word_id
+        mask = mask0.byte()
         # Apply the Viterbi algorithm to get the predictions. This implementation returns
         # the result as a list of lists (not a tensor), corresponding to a matrix
         # of shape (n_sentences, max_len).
-        return self.crf.decode(scores)
+        return self.crf.decode(scores, mask=mask)
 
 def train(train_examples, valid_examples, embvec, TEXT, LABEL, device, model, batch_size, optimizer, n_epochs):
 
@@ -216,7 +217,7 @@ def train(train_examples, valid_examples, embvec, TEXT, LABEL, device, model, ba
         history['train_loss'].append(train_loss)
         if i % 1 == 0:
             print(f'Epoch {i}: train loss = {train_loss:.4f}')
-
+    mlflow.log_metric("train_loss", history['train_loss'])
 
 def evaltest2(df_val, df_val_k, model, tokenizersrc,fields,device):
     # This method applies the trained model to a list of sentences.
@@ -343,7 +344,7 @@ def kphperct(df_val_k,out,svoc):
         for kp in ktrg:
             if str(kp).lower() in [str(x).lower() for x in pred[0]]:
                 k = k+1
-        tp[i] = k/len(ktrg)
+        tp[i] =  k/df_val_k.iloc[i,3]
     return tp
 
 
