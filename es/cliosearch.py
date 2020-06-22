@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 
 
-st.title('Contextual Search for Multiple Scelrosis Records on PubMed')
+st.title('Contextual Search for Multiple Sclerosis Records on PubMed')
 index = st.text_input('Database for search', 'ms')
 query = st.text_input('Search term', 'muitiple sclerosis')
 maxr = st.text_input('max results', 25)
