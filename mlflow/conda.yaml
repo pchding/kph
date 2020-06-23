@@ -13,6 +13,6 @@ dependencies:
   - numpy
   - pip
   - pip:
-    - pymed==0.8.9
+    - "--editable=git+https://github.com/iacopy/pymed.git@fork-fixes#egg=pymed"
     - pytorch-crf
 

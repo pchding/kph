@@ -3,10 +3,10 @@ name: KPHAlphabet
 entry_points:
   pull_pmed_data:
     parameters:
-        search_term: {type: string, default: 'COVID'}
-        max_records: {type: int, default: 1}
-        save_json: {type:string, default: 'pmed.json'}
-        inputfile: {type:int, defulat: 1}
+      search_term: {type: string, default: 'COVID'}
+      max_records: {type: int, default: 1}
+      save_json: {type:string, default: 'pmed.json'}
+      inputfile: {type:int, defulat: 1}
     command: "python pmedpull.py --inputfile {inputfile} --search_term {search_term} --max_records {max_records} --save_json {save_json}"
   prep_data:
     parameters:
@@ -26,7 +26,31 @@ entry_points:
       weight_decay: {type:float, default: 1e-5}
       n_epochs: {type:int, default: 15}
       model_save: {type: string, default: 'model0.pt'}
+      json_in: {type: string, default: 'pmed.json'}
+      json_out: {type: string, default: 'pmedaug.json'}
+      w_es: {type:int, default: 1}
       inputfile: {type:int, defulat: 1}
     command: "python kemodel.py --inputfile {inputfile} --df_in {df_in} --embvec {embvec} --embvecache {embvecache}
               --val_ratio {val_ratio} --rnnsize {rnnsize} --batchsize {batchsize} --lr {lr}
-              --weight_decay {weight_decay} --n_epochs {n_epochs} --model_save {model_save}"
+              --weight_decay {weight_decay} --n_epochs {n_epochs} --model_save {model_save} --json_in {json_in} --json_out {json_out} --w_es {w_es}"
+  main:
+    parameters:
+      search_term: {type: string, default: 'COVID'}
+      max_records: {type: int, default: 1}
+      save_json: {type:string, default: 'pmed.json'}
+      inputfile: {type:int, defulat: 1}
+      embvecache: {type: string, default: '/home/pding/Documents/glove/'}
+      embvec: {type: int, defulat: 1}
+      val_ratio: {type:float, default: 0.2}
+      rnnsize: {type:int, default: 128}
+      batchsize: {type:int, default: 310}
+      lr: {type:float, default: 0.01}
+      weight_decay: {type:float, default: 1e-5}
+      n_epochs: {type:int, default: 15}
+      model_save: {type: string, default: 'model0.pt'}
+      json_in: {type: string, default: 'pmed.json'}
+      json_out: {type: string, default: 'pmedaug.json'}
+      w_es: {type:int, default: 1}
+    command: "python main.py --inputfile {inputfile} --search_term {search_term} --max_records {max_records}--embvec {embvec} --embvecache {embvecache}
+              --val_ratio {val_ratio} --rnnsize {rnnsize} --batchsize {batchsize} --lr {lr}
+              --weight_decay {weight_decay} --n_epochs {n_epochs} --model_save {model_save} --json_out {json_out} --w_es {w_es}"

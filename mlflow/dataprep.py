@@ -21,9 +21,10 @@ def dfprep(json_in, save_df, inputfile):
     with mlflow.start_run() as mlrun:
         print(subprocess.getoutput("python -m spacy download en_core_web_sm"))
         artpd = pd.read_json(json_in, orient='index', convert_dates=False, convert_axes=False)
-        artpda = artpd[artpd.abstract.notnull()]
-        artpda.index = pd.Series(artpda.index).apply(lambda x: x[0:8])
-        artpdak = artpda[artpda.keywords.str.len() > 0]
+        artpda = artpd[artpd.abstract.notnull()].copy()
+        artpda = artpda[artpd.title.notnull()]
+#        artpda.index = pd.Series(artpda.index).apply(lambda x: x[0:8])
+        artpdak = artpda[artpda.keywords.str.len() > 0].copy()
         dataf = pd.DataFrame(index=artpdak.index, columns=['SRC', 'TRG', 'keywords', 'Extracted', 'abskey'])
         dataf.loc[:, 'SRC'] = artpdak.title + ' ' + artpdak.abstract
         dataf.loc[:, 'keywords'] = artpdak.keywords
@@ -52,6 +53,7 @@ def dfprep(json_in, save_df, inputfile):
             dataf.loc[pmid, 'abskey'] = abskw
             matcher.remove("Names")
         dataf.to_pickle(save_df)
+
 
 
 if __name__ == '__main__':

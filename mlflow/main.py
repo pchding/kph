@@ -1,22 +1,29 @@
+from pymed import PubMed
 import mlflow
+from collections import defaultdict
+import json
+import ast
+import spacy
+from spacy.matcher import PhraseMatcher
+import pandas as pd
 import torch
 from torch import nn
 import time
 import torchtext
-import click
 import numpy as np
-import pandas as pd
-import spacy
 from torchcrf import CRF
-import ast
 import subprocess
 import mlflow.pytorch
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers
 
 
-@click.command(help="Convert JSON to PD. Tag key phrases")
-@click.option("--df_in", default='dfprocessed.p')
+@click.option("--search_term", default='test',
+              help="https://pubmed.ncbi.nlm.nih.gov/advanced/")
+@click.option("--max_records", default=10000,
+              help="Limit the data size to run comfortably.")
+@click.option("--json_out", default='pmed.json',
+              help="Name of the output JSON file")
 @click.option("--embvec", default=1)
 @click.option("--embvecache", default='/home/pding/Documents/glove/')
 @click.option("--val_ratio", default=0.2)
@@ -26,17 +33,15 @@ from elasticsearch import helpers
 @click.option("--weight_decay", default=1e-5)
 @click.option("--n_epochs", default=15)
 @click.option("--model_save", default='model0.pt')
-@click.option("--json_in", default='pmed.json')
-@click.option("--json_out", default='pmedaug.json')
 @click.option("--es", default=1)
 @click.option("--inputfile", default=1,
               help="Whether to use the input.txt")
-def ketraintest(inputfile, df_in, embvec, embvecache, val_ratio, rnnsize, batchsize,lr, weight_decay, n_epochs, model_save
-                json_in, json_out, es):
+def mainpipe(inputfile, search_term, max_records, json_out, embvec, embvecache, val_ratio, rnnsize, batchsize,lr, weight_decay, n_epochs, model_save, es):
     if inputfile == 1:
         with open("input.txt", "r") as f:
             para = ast.literal_eval(f.read())
-        df_in = para['df_in']
+        search_term = para['search_term']
+        max_records = para['max_records']
         embvec = para['embvec']
         embvecache = para['embvecache']
         val_ratio = para['val_ratio']
@@ -49,66 +54,142 @@ def ketraintest(inputfile, df_in, embvec, embvecache, val_ratio, rnnsize, batchs
     if embvec == 1:
         embvec = torchtext.vocab.GloVe(name='840B', dim=300, cache=embvecache)
         use_pretrained = True
-    subprocess.getoutput("python -m spacy download en_core_web_sm")
-    svoc = spacy.load("en_core_web_sm")
-    datao = pd.read_pickle(df_in)
-    datatrain = datao[datao['Extracted']>=3]
-    datatest = datao[datao['Extracted']<3]
-    # separate train and validate
-    dtrain = datatrain.loc[:,['SRC','TRG']]
-    dtraink = datatrain.loc[:,['SRC','TRG','keywords']]
-    seed = 250
-    idx = np.arange(datatrain.shape[0])
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.shuffle(idx)
-    val_size = int(len(idx) * val_ratio)
-    df_train = dtrain.iloc[idx[val_size:], :]
-    df_val = dtrain.iloc[idx[:val_size], :]
-    df_val_k = dtraink.iloc[idx[:val_size], :]
-    df_test = datatest.loc[:,['SRC','TRG']]
-    dtraink = datatrain.loc[:,['SRC','TRG','keywords']]
-    df_val_k = dtraink.iloc[idx[:val_size], :]
-    # Load original dataset
-    datai = pd.read_json(json_in, orient='index', convert_dates=False, convert_axes=False)
-    datai = datai[datai.abstract.notnull()]
-    datai = datai[datai.title.notnull()]
-    datai = datai.replace('\n',' ', regex=True)
-    datai = datai.replace('\t',' ', regex=True)
-    dataiu = datai.loc[datai.keywords.str.len() ==0]
-    dataik = datai.loc[datai.keywords.str.len() >0]
-    dataiu['SRC'] = dataiu.title + ' '+ dataiu.abstract
-    tokenizertrg = lambda x: x.split()
-
-    def tokenizersrc(text):  # create a tokenizer function
-        return [tok.text for tok in svoc.tokenizer(text)]
-    def safe_value(field_val):
-        return field_val if not pd.isna(field_val) else "Other"
-    def safe_year(field_val):
-        return field_val if not pd.isna(field_val) else 1900
-    TEXT = torchtext.data.Field(init_token='<bos>', eos_token='<eos>', sequential=True, lower=False)
-    LABEL = torchtext.data.Field(init_token='<bos>', eos_token='<eos>', sequential=True, unk_token=None)
-    fields = [('text', TEXT), ('label', LABEL)]
-    device = 'cuda'
-    train_examples = read_data(df_train, fields, tokenizersrc, tokenizertrg)
-    valid_examples = read_data(df_val, fields, tokenizersrc, tokenizertrg)
-    # Load the pre-trained embeddings that come with the torchtext library.
-    if use_pretrained:
-        print('We are using pre-trained word embeddings.')
-        TEXT.build_vocab(train_examples, vectors=embvec)
-    else: 
-        print('We are training word embeddings from scratch.')
-        TEXT.build_vocab(train_examples, max_size=5000)
-    LABEL.build_vocab(train_examples)
-    # Create one of the models defined above.
-    #self.model = RNNTagger(self.TEXT, self.LABEL, emb_dim=300, rnn_size=128, update_pretrained=False)
-    model0 = RNNCRFTagger(TEXT, LABEL, rnnsize, emb_dim=300,  update_pretrained=False)
-
-    model0.to(device)
-    optimizer = torch.optim.Adam(model0.parameters(), lr=lr, weight_decay=weight_decay)
     with mlflow.start_run() as mlrun:
+        pubmed = PubMed(tool="AlphabetH", email="pcding@outlook.com")
+        query = search_term
+        results = pubmed.query(query, max_results=max_records)
+        pp = defaultdict(lambda: defaultdict(dict))
+        for art in results:
+            pmed = art.pubmed_id
+            try:
+                pp[pmed]['title'] = art.title
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['abstract'] = art.abstract
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['abstract'] = pp[pmed]['abstract'] + art.conclusions
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['abstract'] = pp[pmed]['abstract'] + art.methods
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['abstract'] = pp[pmed]['abstract'] + art.results
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['keywords'] = art.keywords
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['authors']= art.authors
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['journal'] = art.journal
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['pubdate'] = str(art.publication_date.year)
+            except(AttributeError, TypeError):
+                pass
+            try:
+                pp[pmed]['conclusions'] = art.conclusions
+            except(AttributeError, TypeError):
+                pass
+        print(subprocess.getoutput("python -m spacy download en_core_web_sm"))
+        artpd = pd.DataFrame.from_dict(pp, orient='index')
+        artpda = artpd[artpd.abstract.notnull()].copy()
+        artpda = artpda[artpd.title.notnull()]
+#        artpda.index = pd.Series(artpda.index).apply(lambda x: x[0:8])
+        artpdak = artpda[artpda.keywords.str.len() > 0].copy()
+        dataf = pd.DataFrame(index=artpdak.index, columns=['SRC', 'TRG', 'keywords', 'Extracted', 'abskey'])
+        dataf.loc[:, 'SRC'] = artpdak.title + ' ' + artpdak.abstract
+        dataf.loc[:, 'keywords'] = artpdak.keywords
+        svoc = spacy.load("en_core_web_sm")
+        matcher = PhraseMatcher(svoc.vocab, attr="LOWER")
+        for pmid in dataf.index:
+            t0 = dataf.loc[pmid]
+            patterns = [svoc.make_doc(str(name)) for name in t0.keywords]
+            matcher.add("Names", None, *patterns)
+            doc = svoc(t0.SRC)
+            t1 = ['O']*(len(doc))
+            matched = []
+            matn = 0
+            for _, start, end in matcher(doc):
+                t1[start] = 'B'
+                t1[start+1:end] = 'I'*(end-start-1)
+                if str(doc[start:end]).lower() not in matched:
+                    matn = matn+1
+                    matched.append(str(doc[start:end]).lower())
+            abskw = []
+            for x in t0.keywords:
+                if x.lower() not in matched:
+                    abskw.append(x)
+            dataf.loc[pmid, 'TRG'] = ' '.join([t for t in t1])
+            dataf.loc[pmid, 'Extracted'] = matn
+            dataf.loc[pmid, 'abskey'] = abskw
+            matcher.remove("Names")
+        datatrain = dataf[dataf['Extracted']>=3].copy()
+        datatest = dataf[dataf['Extracted']<3].copy()
+        # separate train and validate
+        dtrain = datatrain.loc[:,['SRC','TRG']]
+        dtraink = datatrain.loc[:,['SRC','TRG','keywords']]
+        seed = 250
+        idx = np.arange(datatrain.shape[0])
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.shuffle(idx)
+        val_size = int(len(idx) * val_ratio)
+        df_train = dtrain.iloc[idx[val_size:], :]
+        df_val = dtrain.iloc[idx[:val_size], :]
+        df_val_k = dtraink.iloc[idx[:val_size], :]
+        df_test = datatest.loc[:,['SRC','TRG']]
+        dtraink = datatrain.loc[:,['SRC','TRG','keywords']]
+        df_val_k = dtraink.iloc[idx[:val_size], :]
+        # Load original dataset
+        datai = artpda.copy()
+        datai = datai[datai.abstract.notnull()]
+        datai = datai[datai.title.notnull()]
+        datai = datai.replace('\n',' ', regex=True)
+        datai = datai.replace('\t',' ', regex=True)
+        dataiu = datai.loc[datai.keywords.str.len() ==0]
+        dataik = datai.loc[datai.keywords.str.len() >0]
+        dataiu['SRC'] = dataiu.title + ' '+ dataiu.abstract
+        tokenizertrg = lambda x: x.split()
+
+        def tokenizersrc(text):  # create a tokenizer function
+            return [tok.text for tok in svoc.tokenizer(text)]
+        def safe_value(field_val):
+            return field_val if not pd.isna(field_val) else "Other"
+        def safe_year(field_val):
+            return field_val if not pd.isna(field_val) else 1900
+        TEXT = torchtext.data.Field(init_token='<bos>', eos_token='<eos>', sequential=True, lower=False)
+        LABEL = torchtext.data.Field(init_token='<bos>', eos_token='<eos>', sequential=True, unk_token=None)
+        fields = [('text', TEXT), ('label', LABEL)]
+        device = 'cuda'
+        train_examples = read_data(df_train, fields, tokenizersrc, tokenizertrg)
+        valid_examples = read_data(df_val, fields, tokenizersrc, tokenizertrg)
+        # Load the pre-trained embeddings that come with the torchtext library.
+        if use_pretrained:
+            print('We are using pre-trained word embeddings.')
+            TEXT.build_vocab(train_examples, vectors=embvec)
+        else: 
+            print('We are training word embeddings from scratch.')
+            TEXT.build_vocab(train_examples, max_size=5000)
+        LABEL.build_vocab(train_examples)
+        # Create one of the models defined above.
+        #self.model = RNNTagger(self.TEXT, self.LABEL, emb_dim=300, rnn_size=128, update_pretrained=False)
+        model0 = RNNCRFTagger(TEXT, LABEL, rnnsize, emb_dim=300,  update_pretrained=False)
+
+        model0.to(device)
+        optimizer = torch.optim.Adam(model0.parameters(), lr=lr, weight_decay=weight_decay)
         train(train_examples, valid_examples, embvec, TEXT, LABEL, device, model0, batchsize, optimizer,n_epochs)
         out2 = evaltest2(df_val, df_val_k, model0, tokenizersrc, fields, device)
         ttp3 = kphperct(df_val_k, out2,svoc)
@@ -145,6 +226,7 @@ def ketraintest(inputfile, df_in, embvec, embvecache, val_ratio, rnnsize, batchs
                         return
             helpers.bulk(es, doc_generator(output))
         print(ttp3.mean())
+
 
 
 class RNNCRFTagger(nn.Module):
@@ -373,4 +455,4 @@ def kphperct(df_val_k,out,svoc):
 
 
 if __name__ == '__main__':
-    ketraintest()
+    mainpipe()
